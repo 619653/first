@@ -3,13 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的心情日记</title>
+    <title>我的心情日记 - 云端同步版</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body class="bg-gradient-to-br from-purple-100 to-blue-100 min-h-screen p-4">
     <div class="max-w-md mx-auto">
         <h1 class="text-3xl font-bold text-center text-gray-800 mb-6 mt-4">我的心情日记</h1>
         
+        <!-- 房间号输入区域 -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+            <div class="mb-4">
+                <label class="block text-gray-700 font-medium mb-2">房间号</label>
+                <div class="flex gap-2">
+                    <input type="text" id="roomId" placeholder="输入房间号（如：520）" 
+                        class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                    <button onclick="loadDiaries()" 
+                        class="bg-purple-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-purple-600 transition duration-200">
+                        进入
+                    </button>
+                </div>
+                <p class="text-gray-500 text-sm mt-2">💡 输入相同房间号的人可以看到相同的日记</p>
+            </div>
+        </div>
+
+        <!-- 日记输入区域 -->
         <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
             <div class="mb-4">
                 <label class="block text-gray-700 font-medium mb-2">选择心情</label>
@@ -28,79 +46,284 @@
                     class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"></textarea>
             </div>
             
-            <button onclick="saveDiary()" 
+            <button onclick="saveDiary()" id="saveBtn"
                 class="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition duration-200">
                 保存日记
             </button>
         </div>
 
+        <!-- 加载状态提示 -->
+        <div id="loading" class="hidden bg-blue-100 text-blue-800 rounded-lg p-4 mb-4 text-center">
+            <span class="animate-pulse">⏳ 加载中...</span>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="error" class="hidden bg-red-100 text-red-800 rounded-lg p-4 mb-4 text-center">
+            <span>❌ 同步失败，请检查网络</span>
+        </div>
+
+        <!-- 历史记录 -->
         <h2 class="text-xl font-bold text-gray-800 mb-4">历史记录</h2>
         <div id="diaryList" class="space-y-3">
+            <p class="text-gray-500 text-center py-4">请输入房间号进入房间</p>
         </div>
     </div>
 
     <script>
+        // ========================================
+        // Supabase 配置和初始化
+        // ========================================
+        
+        // Supabase 项目配置信息
+        const SUPABASE_URL = 'https://salkxkyvjdcdyzonouhn.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_aMqSrbbQjiJlM-A2dRsO-w_TRCozumi';
+        
+        // 初始化 Supabase 客户端
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // 数据表名称
+        const TABLE_NAME = 'diaries';
+        
+        // 当前房间号
+        let currentRoomId = '';
+
+        // ========================================
+        // 页面加载时执行
+        // ========================================
         window.onload = function() {
-            loadDiaries();
+            // 从 localStorage 恢复上次使用的房间号
+            const savedRoomId = localStorage.getItem('lastRoomId');
+            if (savedRoomId) {
+                document.getElementById('roomId').value = savedRoomId;
+            }
         };
 
-        function saveDiary() {
-            const mood = document.getElementById('mood').value;
-            const content = document.getElementById('content').value;
-            
-            if (!content.trim()) {
-                alert('请写点什么吧！');
-                return;
+        // ========================================
+        // 显示/隐藏加载状态
+        // ========================================
+        function showLoading(show) {
+            const loadingDiv = document.getElementById('loading');
+            if (show) {
+                loadingDiv.classList.remove('hidden');
+            } else {
+                loadingDiv.classList.add('hidden');
             }
-
-            const diary = {
-                id: Date.now(),
-                mood: mood,
-                content: content,
-                time: new Date().toLocaleString('zh-CN')
-            };
-
-            let diaries = JSON.parse(localStorage.getItem('diaries') || '[]');
-            diaries.unshift(diary);
-            localStorage.setItem('diaries', JSON.stringify(diaries));
-            
-            document.getElementById('content').value = '';
-            loadDiaries();
-            alert('保存成功！');
         }
 
-        function loadDiaries() {
-            const diaries = JSON.parse(localStorage.getItem('diaries') || '[]');
+        // ========================================
+        // 显示/隐藏错误提示
+        // ========================================
+        function showError(show, message = '同步失败，请检查网络') {
+            const errorDiv = document.getElementById('error');
+            if (show) {
+                errorDiv.innerHTML = `<span>❌ ${message}</span>`;
+                errorDiv.classList.remove('hidden');
+                // 3秒后自动隐藏错误提示
+                setTimeout(() => {
+                    errorDiv.classList.add('hidden');
+                }, 3000);
+            } else {
+                errorDiv.classList.add('hidden');
+            }
+        }
+
+        // ========================================
+        // 从 Supabase 读取日记
+        // ========================================
+        async function loadDiaries() {
+            const roomId = document.getElementById('roomId').value.trim();
+            
+            // 验证房间号
+            if (!roomId) {
+                alert('请输入房间号！');
+                return;
+            }
+            
+            // 保存当前房间号
+            currentRoomId = roomId;
+            localStorage.setItem('lastRoomId', roomId);
+            
+            // 显示加载状态
+            showLoading(true);
+            showError(false);
+            
+            try {
+                // 从 Supabase 查询该房间号的所有日记，按创建时间倒序排列
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .eq('room_id', roomId)
+                    .order('created_at', { ascending: false });
+                
+                // 隐藏加载状态
+                showLoading(false);
+                
+                // 检查是否有错误
+                if (error) {
+                    console.error('读取失败:', error);
+                    showError(true);
+                    return;
+                }
+                
+                // 显示日记列表
+                displayDiaries(data || []);
+                
+            } catch (err) {
+                // 捕获网络错误或其他异常
+                console.error('加载日记出错:', err);
+                showLoading(false);
+                showError(true);
+            }
+        }
+
+        // ========================================
+        // 显示日记列表
+        // ========================================
+        function displayDiaries(diaries) {
             const listDiv = document.getElementById('diaryList');
             
+            // 如果没有日记，显示提示信息
             if (diaries.length === 0) {
                 listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">还没有日记，写第一篇吧！</p>';
                 return;
             }
-
-            listDiv.innerHTML = diaries.map(diary => `
-                <div class="bg-white rounded-xl shadow p-4 relative group">
-                    <div class="flex justify-between items-start mb-2">
-                        <span class="text-2xl">${diary.mood.split(' ')[1]}</span>
-                        <button onclick="deleteDiary(${diary.id})" 
-                            class="text-red-500 hover:text-red-700 text-sm opacity-0 group-hover:opacity-100 transition">
-                            删除
-                        </button>
+            
+            // 遍历日记数组，生成 HTML
+            listDiv.innerHTML = diaries.map(diary => {
+                // 格式化时间显示
+                const time = new Date(diary.created_at).toLocaleString('zh-CN');
+                // 提取表情符号
+                const emoji = diary.mood.split(' ')[1] || diary.mood;
+                
+                return `
+                    <div class="bg-white rounded-xl shadow p-4 relative group">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-2xl">${emoji}</span>
+                            <button onclick="deleteDiary('${diary.id}')" 
+                                class="text-red-500 hover:text-red-700 text-sm opacity-0 group-hover:opacity-100 transition">
+                                删除
+                            </button>
+                        </div>
+                        <p class="text-gray-800 mb-2">${diary.content}</p>
+                        <p class="text-gray-400 text-sm">${time}</p>
                     </div>
-                    <p class="text-gray-800 mb-2">${diary.content}</p>
-                    <p class="text-gray-400 text-sm">${diary.time}</p>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
-        function deleteDiary(id) {
+        // ========================================
+        // 保存日记到 Supabase
+        // ========================================
+        async function saveDiary() {
+            // 验证房间号
+            if (!currentRoomId) {
+                alert('请先输入房间号并点击"进入"按钮！');
+                return;
+            }
+            
+            const mood = document.getElementById('mood').value;
+            const content = document.getElementById('content').value;
+            
+            // 验证内容不为空
+            if (!content.trim()) {
+                alert('请写点什么吧！');
+                return;
+            }
+            
+            // 显示加载状态
+            showLoading(true);
+            showError(false);
+            
+            // 禁用保存按钮，防止重复提交
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = '保存中...';
+            
+            try {
+                // 构建要插入的数据对象
+                const diaryData = {
+                    room_id: currentRoomId,
+                    mood: mood,
+                    content: content,
+                    created_at: new Date().toISOString()
+                };
+                
+                // 向 Supabase 插入新日记
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .insert([diaryData])
+                    .select();
+                
+                // 隐藏加载状态
+                showLoading(false);
+                
+                // 恢复保存按钮
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存日记';
+                
+                // 检查是否有错误
+                if (error) {
+                    console.error('保存失败:', error);
+                    showError(true);
+                    return;
+                }
+                
+                // 清空输入框
+                document.getElementById('content').value = '';
+                
+                // 刷新日记列表
+                await loadDiaries();
+                
+                // 显示成功提示
+                alert('保存成功！');
+                
+            } catch (err) {
+                // 捕获网络错误或其他异常
+                console.error('保存日记出错:', err);
+                showLoading(false);
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存日记';
+                showError(true);
+            }
+        }
+
+        // ========================================
+        // 从 Supabase 删除日记
+        // ========================================
+        async function deleteDiary(id) {
+            // 确认删除操作
             if (!confirm('确定要删除这条日记吗？')) return;
             
-            let diaries = JSON.parse(localStorage.getItem('diaries') || '[]');
-            diaries = diaries.filter(d => d.id !== id);
-            localStorage.setItem('diaries', JSON.stringify(diaries));
+            // 显示加载状态
+            showLoading(true);
+            showError(false);
             
-            loadDiaries();
+            try {
+                // 从 Supabase 删除指定 ID 的日记
+                const { error } = await supabase
+                    .from(TABLE_NAME)
+                    .delete()
+                    .eq('id', id);
+                
+                // 隐藏加载状态
+                showLoading(false);
+                
+                // 检查是否有错误
+                if (error) {
+                    console.error('删除失败:', error);
+                    showError(true);
+                    return;
+                }
+                
+                // 刷新日记列表
+                await loadDiaries();
+                
+            } catch (err) {
+                // 捕获网络错误或其他异常
+                console.error('删除日记出错:', err);
+                showLoading(false);
+                showError(true);
+            }
         }
     </script>
 </body>
