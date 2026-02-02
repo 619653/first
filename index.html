@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的心情日记</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-purple-100 to-blue-100 min-h-screen p-4">
+    <div class="max-w-md mx-auto">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6 mt-4">我的心情日记</h1>
+        
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+            <div class="mb-4">
+                <label class="block text-gray-700 font-medium mb-2">选择心情</label>
+                <select id="mood" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                    <option value="开心 😊">开心 😊</option>
+                    <option value="平静 😐">平静 😐</option>
+                    <option value="难过 😢">难过 😢</option>
+                    <option value="生气 😠">生气 😠</option>
+                    <option value="兴奋 🤩">兴奋 🤩</option>
+                </select>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-gray-700 font-medium mb-2">日记内容</label>
+                <textarea id="content" rows="4" placeholder="写下今天的心情..." 
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"></textarea>
+            </div>
+            
+            <button onclick="saveDiary()" 
+                class="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition duration-200">
+                保存日记
+            </button>
+        </div>
+
+        <h2 class="text-xl font-bold text-gray-800 mb-4">历史记录</h2>
+        <div id="diaryList" class="space-y-3">
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            loadDiaries();
+        };
+
+        function saveDiary() {
+            const mood = document.getElementById('mood').value;
+            const content = document.getElementById('content').value;
+            
+            if (!content.trim()) {
+                alert('请写点什么吧！');
+                return;
+            }
+
+            const diary = {
+                id: Date.now(),
+                mood: mood,
+                content: content,
+                time: new Date().toLocaleString('zh-CN')
+            };
+
+            let diaries = JSON.parse(localStorage.getItem('diaries') || '[]');
+            diaries.unshift(diary);
+            localStorage.setItem('diaries', JSON.stringify(diaries));
+            
+            document.getElementById('content').value = '';
+            loadDiaries();
+            alert('保存成功！');
+        }
+
+        function loadDiaries() {
+            const diaries = JSON.parse(localStorage.getItem('diaries') || '[]');
+            const listDiv = document.getElementById('diaryList');
+            
+            if (diaries.length === 0) {
+                listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">还没有日记，写第一篇吧！</p>';
+                return;
+            }
+
+            listDiv.innerHTML = diaries.map(diary => `
+                <div class="bg-white rounded-xl shadow p-4 relative group">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-2xl">${diary.mood.split(' ')[1]}</span>
+                        <button onclick="deleteDiary(${diary.id})" 
+                            class="text-red-500 hover:text-red-700 text-sm opacity-0 group-hover:opacity-100 transition">
+                            删除
+                        </button>
+                    </div>
+                    <p class="text-gray-800 mb-2">${diary.content}</p>
+                    <p class="text-gray-400 text-sm">${diary.time}</p>
+                </div>
+            `).join('');
+        }
+
+        function deleteDiary(id) {
+            if (!confirm('确定要删除这条日记吗？')) return;
+            
+            let diaries = JSON.parse(localStorage.getItem('diaries') || '[]');
+            diaries = diaries.filter(d => d.id !== id);
+            localStorage.setItem('diaries', JSON.stringify(diaries));
+            
+            loadDiaries();
+        }
+    </script>
+</body>
+</html>
