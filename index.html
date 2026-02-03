@@ -18,7 +18,7 @@
                 <div class="flex gap-2">
                     <input type="text" id="roomId" placeholder="输入房间号（如：520）" 
                         class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-                    <button onclick="loadDiaries()" 
+                    <button onclick="enterRoom()" 
                         class="bg-purple-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-purple-600 transition duration-200">
                         进入
                     </button>
@@ -52,15 +52,8 @@
             </button>
         </div>
 
-        <!-- 加载状态提示 -->
-        <div id="loading" class="hidden bg-blue-100 text-blue-800 rounded-lg p-4 mb-4 text-center">
-            <span class="animate-pulse">⏳ 加载中...</span>
-        </div>
-
-        <!-- 错误提示 -->
-        <div id="error" class="hidden bg-red-100 text-red-800 rounded-lg p-4 mb-4 text-center">
-            <span>❌ 同步失败，请检查网络</span>
-        </div>
+        <!-- 状态提示 -->
+        <div id="status" class="hidden rounded-lg p-4 mb-4 text-center"></div>
 
         <!-- 历史记录 -->
         <h2 class="text-xl font-bold text-gray-800 mb-4">历史记录</h2>
@@ -71,176 +64,130 @@
 
     <script>
         // ========================================
-        // Supabase 配置和初始化
+        // 修正：去掉 URL 末尾的空格！
         // ========================================
-        
-        // Supabase 项目配置信息
         const SUPABASE_URL = 'https://salkxkyvjdcdyzonouhn.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_aMqSrbbQjiJlM-A2dRsO-w_TRCozumi';
         
-        // 初始化 Supabase 客户端
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('正在连接 Supabase...', SUPABASE_URL);
         
-        // 数据表名称
+        let supabase;
+        try {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            console.log('✅ Supabase 初始化成功');
+        } catch (err) {
+            console.error('❌ Supabase 初始化失败:', err);
+            alert('连接失败：' + err.message);
+        }
+        
         const TABLE_NAME = 'diaries';
-        
-        // 当前房间号
         let currentRoomId = '';
 
-        // ========================================
-        // 页面加载时执行
-        // ========================================
-        window.onload = function() {
-            // 从 localStorage 恢复上次使用的房间号
-            const savedRoomId = localStorage.getItem('lastRoomId');
-            if (savedRoomId) {
-                document.getElementById('roomId').value = savedRoomId;
-            }
-        };
-
-        // ========================================
-        // 显示/隐藏加载状态
-        // ========================================
-        function showLoading(show) {
-            const loadingDiv = document.getElementById('loading');
-            if (show) {
-                loadingDiv.classList.remove('hidden');
-            } else {
-                loadingDiv.classList.add('hidden');
-            }
+        // 显示状态信息
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `rounded-lg p-4 mb-4 text-center ${isError ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`;
+            statusDiv.classList.remove('hidden');
+            console.log(isError ? '❌ ' : '✅ ', message);
         }
 
-        // ========================================
-        // 显示/隐藏错误提示
-        // ========================================
-        function showError(show, message = '同步失败，请检查网络') {
-            const errorDiv = document.getElementById('error');
-            if (show) {
-                errorDiv.innerHTML = `<span>❌ ${message}</span>`;
-                errorDiv.classList.remove('hidden');
-                // 3秒后自动隐藏错误提示
-                setTimeout(() => {
-                    errorDiv.classList.add('hidden');
-                }, 3000);
-            } else {
-                errorDiv.classList.add('hidden');
-            }
-        }
-
-        // ========================================
-        // 从 Supabase 读取日记
-        // ========================================
-        async function loadDiaries() {
+        // 进入房间
+        async function enterRoom() {
             const roomId = document.getElementById('roomId').value.trim();
             
-            // 验证房间号
             if (!roomId) {
                 alert('请输入房间号！');
                 return;
             }
             
-            // 保存当前房间号
             currentRoomId = roomId;
             localStorage.setItem('lastRoomId', roomId);
+            showStatus(`正在进入房间 ${roomId}...`);
             
-            // 显示加载状态
-            showLoading(true);
-            showError(false);
+            await loadDiaries();
+        }
+
+        // 读取日记
+        async function loadDiaries() {
+            if (!currentRoomId) return;
             
             try {
-                // 从 Supabase 查询该房间号的所有日记，按创建时间倒序排列
+                console.log('正在查询房间:', currentRoomId);
                 const { data, error } = await supabase
                     .from(TABLE_NAME)
                     .select('*')
-                    .eq('room_id', roomId)
+                    .eq('room_id', currentRoomId)
                     .order('created_at', { ascending: false });
                 
-                // 隐藏加载状态
-                showLoading(false);
+                document.getElementById('status').classList.add('hidden');
                 
-                // 检查是否有错误
                 if (error) {
-                    console.error('读取失败:', error);
-                    showError(true);
+                    console.error('查询错误:', error);
+                    showStatus('读取失败：' + error.message, true);
                     return;
                 }
                 
-                // 显示日记列表
+                console.log('查询成功，数据:', data);
                 displayDiaries(data || []);
                 
             } catch (err) {
-                // 捕获网络错误或其他异常
-                console.error('加载日记出错:', err);
-                showLoading(false);
-                showError(true);
+                console.error('加载异常:', err);
+                showStatus('加载异常：' + err.message, true);
             }
         }
 
-        // ========================================
-        // 显示日记列表
-        // ========================================
+        // 显示列表
         function displayDiaries(diaries) {
             const listDiv = document.getElementById('diaryList');
             
-            // 如果没有日记，显示提示信息
-            if (diaries.length === 0) {
-                listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">还没有日记，写第一篇吧！</p>';
+            if (!diaries || diaries.length === 0) {
+                listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">房间里还没有日记，写第一篇吧！</p>';
                 return;
             }
             
-            // 遍历日记数组，生成 HTML
             listDiv.innerHTML = diaries.map(diary => {
-                // 格式化时间显示
                 const time = new Date(diary.created_at).toLocaleString('zh-CN');
-                // 提取表情符号
-                const emoji = diary.mood.split(' ')[1] || diary.mood;
+                const emoji = diary.mood ? diary.mood.split(' ')[1] : '📝';
                 
                 return `
                     <div class="bg-white rounded-xl shadow p-4 relative group">
                         <div class="flex justify-between items-start mb-2">
                             <span class="text-2xl">${emoji}</span>
-                            <button onclick="deleteDiary('${diary.id}')" 
+                            <button onclick="deleteDiary(${diary.id})" 
                                 class="text-red-500 hover:text-red-700 text-sm opacity-0 group-hover:opacity-100 transition">
                                 删除
                             </button>
                         </div>
-                        <p class="text-gray-800 mb-2">${diary.content}</p>
+                        <p class="text-gray-800 mb-2">${diary.content || ''}</p>
                         <p class="text-gray-400 text-sm">${time}</p>
                     </div>
                 `;
             }).join('');
         }
 
-        // ========================================
-        // 保存日记到 Supabase
-        // ========================================
+        // 保存日记
         async function saveDiary() {
-            // 验证房间号
             if (!currentRoomId) {
-                alert('请先输入房间号并点击"进入"按钮！');
+                alert('请先输入房间号并点击"进入"！');
                 return;
             }
             
             const mood = document.getElementById('mood').value;
             const content = document.getElementById('content').value;
             
-            // 验证内容不为空
             if (!content.trim()) {
                 alert('请写点什么吧！');
                 return;
             }
             
-            // 显示加载状态
-            showLoading(true);
-            showError(false);
-            
-            // 禁用保存按钮，防止重复提交
             const saveBtn = document.getElementById('saveBtn');
             saveBtn.disabled = true;
             saveBtn.textContent = '保存中...';
+            showStatus('正在保存...');
             
             try {
-                // 构建要插入的数据对象
+                console.log('正在保存到房间:', currentRoomId);
                 const diaryData = {
                     room_id: currentRoomId,
                     mood: mood,
@@ -248,83 +195,69 @@
                     created_at: new Date().toISOString()
                 };
                 
-                // 向 Supabase 插入新日记
                 const { data, error } = await supabase
                     .from(TABLE_NAME)
                     .insert([diaryData])
                     .select();
                 
-                // 隐藏加载状态
-                showLoading(false);
-                
-                // 恢复保存按钮
                 saveBtn.disabled = false;
                 saveBtn.textContent = '保存日记';
                 
-                // 检查是否有错误
                 if (error) {
-                    console.error('保存失败:', error);
-                    showError(true);
+                    console.error('保存错误:', error);
+                    showStatus('保存失败：' + error.message, true);
                     return;
                 }
                 
-                // 清空输入框
+                console.log('保存成功:', data);
                 document.getElementById('content').value = '';
-                
-                // 刷新日记列表
+                showStatus('保存成功！');
                 await loadDiaries();
                 
-                // 显示成功提示
-                alert('保存成功！');
+                setTimeout(() => {
+                    document.getElementById('status').classList.add('hidden');
+                }, 2000);
                 
             } catch (err) {
-                // 捕获网络错误或其他异常
-                console.error('保存日记出错:', err);
-                showLoading(false);
+                console.error('保存异常:', err);
                 saveBtn.disabled = false;
                 saveBtn.textContent = '保存日记';
-                showError(true);
+                showStatus('保存异常：' + err.message, true);
             }
         }
 
-        // ========================================
-        // 从 Supabase 删除日记
-        // ========================================
+        // 删除日记
         async function deleteDiary(id) {
-            // 确认删除操作
             if (!confirm('确定要删除这条日记吗？')) return;
             
-            // 显示加载状态
-            showLoading(true);
-            showError(false);
+            showStatus('正在删除...');
             
             try {
-                // 从 Supabase 删除指定 ID 的日记
                 const { error } = await supabase
                     .from(TABLE_NAME)
                     .delete()
                     .eq('id', id);
                 
-                // 隐藏加载状态
-                showLoading(false);
-                
-                // 检查是否有错误
                 if (error) {
-                    console.error('删除失败:', error);
-                    showError(true);
+                    showStatus('删除失败：' + error.message, true);
                     return;
                 }
                 
-                // 刷新日记列表
+                showStatus('删除成功！');
                 await loadDiaries();
                 
             } catch (err) {
-                // 捕获网络错误或其他异常
-                console.error('删除日记出错:', err);
-                showLoading(false);
-                showError(true);
+                showStatus('删除异常：' + err.message, true);
             }
         }
+
+        // 页面加载时恢复房间号
+        window.onload = function() {
+            const savedRoomId = localStorage.getItem('lastRoomId');
+            if (savedRoomId) {
+                document.getElementById('roomId').value = savedRoomId;
+            }
+        };
     </script>
 </body>
 </html>
