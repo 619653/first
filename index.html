@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>我的心情日记 - 云端同步版</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body class="bg-gradient-to-br from-purple-100 to-blue-100 min-h-screen p-4">
     <div class="max-w-md mx-auto">
@@ -18,7 +17,7 @@
                 <div class="flex gap-2">
                     <input type="text" id="roomId" placeholder="输入房间号（如：520）" 
                         class="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
-                    <button onclick="enterRoom()" 
+                    <button id="enterBtn"
                         class="bg-purple-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-purple-600 transition duration-200">
                         进入
                     </button>
@@ -46,7 +45,7 @@
                     class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"></textarea>
             </div>
             
-            <button onclick="saveDiary()" id="saveBtn"
+            <button id="saveBtn"
                 class="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition duration-200">
                 保存日记
             </button>
@@ -62,34 +61,32 @@
         </div>
     </div>
 
-    <script>
+    <!-- 使用 ES 模块引入 Supabase（国内访问更稳定） -->
+    <script type="module">
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+        
         // ========================================
-        // 修正：去掉 URL 末尾的空格！
+        // 配置信息（确认没有空格！）
         // ========================================
         const SUPABASE_URL = 'https://salkxkyvjdcdyzonouhn.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_aMqSrbbQjiJlM-A2dRsO-w_TRCozumi';
-        
-        console.log('正在连接 Supabase...', SUPABASE_URL);
-        
-        let supabase;
-        try {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            console.log('✅ Supabase 初始化成功');
-        } catch (err) {
-            console.error('❌ Supabase 初始化失败:', err);
-            alert('连接失败：' + err.message);
-        }
-        
         const TABLE_NAME = 'diaries';
+        
+        console.log('✅ 模块加载成功，正在初始化 Supabase...');
+        
+        // 初始化客户端
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('✅ Supabase 初始化成功');
+        
         let currentRoomId = '';
 
-        // 显示状态信息
+        // 显示状态
         function showStatus(message, isError = false) {
             const statusDiv = document.getElementById('status');
             statusDiv.textContent = message;
             statusDiv.className = `rounded-lg p-4 mb-4 text-center ${isError ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`;
             statusDiv.classList.remove('hidden');
-            console.log(isError ? '❌ ' : '✅ ', message);
+            console.log(isError ? '❌' : '✅', message);
         }
 
         // 进入房间
@@ -128,7 +125,7 @@
                     return;
                 }
                 
-                console.log('查询成功，数据:', data);
+                console.log('查询成功，数据条数:', data ? data.length : 0);
                 displayDiaries(data || []);
                 
             } catch (err) {
@@ -154,8 +151,7 @@
                     <div class="bg-white rounded-xl shadow p-4 relative group">
                         <div class="flex justify-between items-start mb-2">
                             <span class="text-2xl">${emoji}</span>
-                            <button onclick="deleteDiary(${diary.id})" 
-                                class="text-red-500 hover:text-red-700 text-sm opacity-0 group-hover:opacity-100 transition">
+                            <button class="delete-btn text-red-500 hover:text-red-700 text-sm opacity-0 group-hover:opacity-100 transition" data-id="${diary.id}">
                                 删除
                             </button>
                         </div>
@@ -164,6 +160,13 @@
                     </div>
                 `;
             }).join('');
+            
+            // 绑定删除按钮事件
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    deleteDiary(parseInt(e.target.dataset.id));
+                });
+            });
         }
 
         // 保存日记
@@ -252,12 +255,14 @@
         }
 
         // 页面加载时恢复房间号
-        window.onload = function() {
-            const savedRoomId = localStorage.getItem('lastRoomId');
-            if (savedRoomId) {
-                document.getElementById('roomId').value = savedRoomId;
-            }
-        };
+        const savedRoomId = localStorage.getItem('lastRoomId');
+        if (savedRoomId) {
+            document.getElementById('roomId').value = savedRoomId;
+        }
+
+        // 绑定按钮事件（模块内需要用 addEventListener）
+        document.getElementById('enterBtn').addEventListener('click', enterRoom);
+        document.getElementById('saveBtn').addEventListener('click', saveDiary);
     </script>
 </body>
 </html>
